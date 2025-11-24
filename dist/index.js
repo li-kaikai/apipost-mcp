@@ -419,12 +419,8 @@ function generateApiTemplate(method, url, name, config = {}) {
         const bodyParams = config.body || [];
         if (!Array.isArray(bodyParams) || bodyParams.length === 0)
             return {};
-        
         // 检测是否为数组类型body（所有key都以"[].开头"）
-        const isArrayBody = bodyParams.length > 0 && bodyParams.every(param => 
-            param.key && (param.key.startsWith('[].') || param.key.startsWith('[0].'))
-        );
-        
+        const isArrayBody = bodyParams.length > 0 && bodyParams.every(param => param.key && (param.key.startsWith('[].') || param.key.startsWith('[0].')));
         if (isArrayBody) {
             // 构建数组元素对象
             const arrayItem = {};
@@ -447,7 +443,6 @@ function generateApiTemplate(method, url, name, config = {}) {
             });
             return [arrayItem]; // 返回数组格式
         }
-        
         // 对象类型body
         const body = {};
         bodyParams.forEach(param => {
@@ -507,9 +502,7 @@ function generateApiTemplate(method, url, name, config = {}) {
             },
             body: (() => {
                 const bodyParams = config.body || [];
-                const isArrayBody = bodyParams.length > 0 && bodyParams.every(param => 
-                    param.key && (param.key.startsWith('[].') || param.key.startsWith('[0].'))
-                );
+                const isArrayBody = bodyParams.length > 0 && bodyParams.every((param) => param.key && (param.key.startsWith('[].') || param.key.startsWith('[0].')));
                 const requestBody = generateRequestBody();
                 return {
                     mode: config.body && config.body.length > 0 ? 'json' : 'none',
