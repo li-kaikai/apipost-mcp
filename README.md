@@ -52,7 +52,7 @@ npm --version    # 应显示 8.0.0 或更高版本
 ### 开始安装
 
 ```bash
-git clone https://github.com/jlcodes99/apipost-mcp.git
+git clone [https://github.com/jlcodes99/apipost-mcp.git](https://github.com/li-kaikai/apipost-mcp.git)
 cd apipost-mcp
 npm install && npm run build
 ```
