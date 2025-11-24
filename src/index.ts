@@ -485,7 +485,33 @@ function generateApiTemplate(method: string, url: string, name: string, config: 
   const generateRequestBody = () => {
     const bodyParams = config.body || [];
     if (!Array.isArray(bodyParams) || bodyParams.length === 0) return {};
-    
+
+    // 检测是否为数组类型body（所有key都以"[].开头"）
+    const isArrayBody = bodyParams.length > 0 && bodyParams.every(param =>
+      param.key && (param.key.startsWith('[].') || param.key.startsWith('[0].'))
+    );
+
+    if (isArrayBody) {
+      // 构建数组元素对象
+      const arrayItem: any = {};
+      bodyParams.forEach(param => {
+        const fieldName = param.key.replace(/^\[(\d+)?\]\./, ''); // 移除 []. 或 [0]. 前缀
+        try {
+          if (param.type === 'integer') {
+            arrayItem[fieldName] = parseInt(param.example);
+          } else if (param.type === 'number') {
+            arrayItem[fieldName] = parseFloat(param.example);
+          } else {
+            arrayItem[fieldName] = param.example;
+          }
+        } catch {
+          arrayItem[fieldName] = param.example;
+        }
+      });
+      return [arrayItem]; // 返回数组格式
+    }
+
+    // 对象类型body
     const body: any = {};
     bodyParams.forEach(param => {
       try {
@@ -493,7 +519,7 @@ function generateApiTemplate(method: string, url: string, name: string, config: 
           body[param.key] = parseInt(param.example);
         } else if (param.type === 'number') {
           body[param.key] = parseFloat(param.example);
-    } else {
+        } else {
           body[param.key] = param.example;
         }
       } catch {
@@ -540,14 +566,21 @@ function generateApiTemplate(method: string, url: string, name: string, config: 
         query_add_equal: 1,
         parameter: convertParams(config.query || [])
       },
-      body: {
-        mode: config.body && config.body.length > 0 ? 'json' : 'none',
-        parameter: [],
-        raw: config.body && config.body.length > 0 ? JSON.stringify(generateRequestBody(), null, 4) : '',
-        raw_parameter: convertParams(config.body || []),
-        raw_schema: { type: 'object' },
-        binary: null
-      },
+      body: (() => {
+        const bodyParams = config.body || [];
+        const isArrayBody = bodyParams.length > 0 && bodyParams.every((param: any) =>
+          param.key && (param.key.startsWith('[].') || param.key.startsWith('[0].'))
+        );
+        const requestBody = generateRequestBody();
+        return {
+          mode: config.body && config.body.length > 0 ? 'json' : 'none',
+          parameter: [],
+          raw: config.body && config.body.length > 0 ? JSON.stringify(requestBody, null, 4) : '',
+          raw_parameter: convertParams(config.body || []),
+          raw_schema: isArrayBody ? { type: 'array' } : { type: 'object' },
+          binary: null
+        };
+      })(),
       cookie: {
         cookie_encode: 1,
         parameter: convertParams(config.cookies || [])
