@@ -419,35 +419,48 @@ function generateApiTemplate(method, url, name, config = {}) {
         const bodyParams = config.body || [];
         if (!Array.isArray(bodyParams) || bodyParams.length === 0)
             return {};
-        // 检测是否为数组类型body（所有key都以"[].开头"）
-        const isArrayBody = bodyParams.length > 0 && bodyParams.every(param => param.key && (param.key.startsWith('[].') || param.key.startsWith('[0].')));
+        // 检测是否为数组类型body（检查是否所有参数都是数组元素字段格式）
+        const totalParams = bodyParams.length;
+        const arrayElementParams = bodyParams.filter(param => param.key && (param.key.includes('[].') || param.key.includes('[0.]')));
+        const isArrayBody = totalParams > 0 && arrayElementParams.length === totalParams;
         if (isArrayBody) {
             // 构建数组元素对象
             const arrayItem = {};
             bodyParams.forEach(param => {
-                const fieldName = param.key.replace(/^\[(\d+)?\]\./, ''); // 移除 []. 或 [0]. 前缀
-                try {
-                    if (param.type === 'integer') {
-                        arrayItem[fieldName] = parseInt(param.example);
+                // 跳过数组字段本身（如 detail），只处理数组元素字段
+                if (param.key.includes('[].') || param.key.includes('[0].')) {
+                    const fieldName = param.key.replace(/.*\[\]\./, ''); // 移除 field[]. 前缀，保留字段名
+                    try {
+                        if (param.type === 'integer') {
+                            arrayItem[fieldName] = parseInt(param.example);
+                        }
+                        else if (param.type === 'number') {
+                            arrayItem[fieldName] = parseFloat(param.example);
+                        }
+                        else {
+                            arrayItem[fieldName] = param.example;
+                        }
                     }
-                    else if (param.type === 'number') {
-                        arrayItem[fieldName] = parseFloat(param.example);
-                    }
-                    else {
+                    catch {
                         arrayItem[fieldName] = param.example;
                     }
-                }
-                catch {
-                    arrayItem[fieldName] = param.example;
                 }
             });
             return [arrayItem]; // 返回数组格式
         }
-        // 对象类型body
+        // 对象类型body - 只处理实际的请求字段，跳过描述性字段（如 detail[].*）
         const body = {};
         bodyParams.forEach(param => {
+            // 跳过数组元素的描述字段（如 detail[].goods_id），这些只用于参数定义，不用于实际请求
+            if (param.key && (param.key.includes('[].') || param.key.includes('[0.]'))) {
+                return; // 跳过这些描述性字段
+            }
             try {
-                if (param.type === 'integer') {
+                if (param.type === 'array' && param.example) {
+                    // 对于数组类型的字段，直接使用example值
+                    body[param.key] = param.example;
+                }
+                else if (param.type === 'integer') {
                     body[param.key] = parseInt(param.example);
                 }
                 else if (param.type === 'number') {
@@ -502,7 +515,8 @@ function generateApiTemplate(method, url, name, config = {}) {
             },
             body: (() => {
                 const bodyParams = config.body || [];
-                const isArrayBody = bodyParams.length > 0 && bodyParams.every((param) => param.key && (param.key.startsWith('[].') || param.key.startsWith('[0].')));
+                const hasArrayElements = bodyParams.some((param) => param.key && (param.key.includes('[].') || param.key.includes('[0].')));
+                const isArrayBody = hasArrayElements;
                 const requestBody = generateRequestBody();
                 return {
                     mode: config.body && config.body.length > 0 ? 'json' : 'none',
@@ -712,6 +726,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                     name: { type: 'string', description: '新的接口名称（可选）' },
                     method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE'], description: '新的HTTP方法（可选）' },
                     url: { type: 'string', description: '新的接口URL（可选）' },
+                    parent_id: { type: 'string', description: '新的父目录ID（可选）。可以移动接口到不同的目录' },
                     description: { type: 'string', description: '接口详细描述（可选）。提供空字符串""可清空描述' },
                     headers: { type: 'string', description: 'Headers参数JSON数组字符串（可选）。提供"[]"可删除所有headers。格式：[{"key":"Content-Type","desc":"内容类型","type":"string","required":true,"example":"application/json"}]' },
                     query: { type: 'string', description: 'Query参数JSON数组字符串（可选）。提供"[]"可删除所有query参数。格式：[{"key":"page","desc":"页码","type":"integer","required":false,"example":"1"}]' },
@@ -1309,7 +1324,9 @@ ${connectionInfo.workspace ? `• 团队: ${connectionInfo.workspace.team_name}
                 }
                 const originalApi = getResult.data.data.list[0]; // 获取数组中的第一个接口
                 if (!originalApi) {
-                    throw new Error(`未找到接口详情 (ID: ${targetId})。可能原因：1) 接口不存在 2) 无权限访问 3) 接口已被删除。请检查接口ID是否正确。`);
+                    // 接口不存在，返回特殊标记，让脚本调用创建函数
+                    console.log(`由于 target_id 为 "${targetId}"，无法进行更新操作，因此改用创建新接口文档。`);
+                    throw new Error(`INTERFACE_NOT_FOUND:${args.parent_id || '0'}:${args.name}:${args.method}:${args.url}`);
                 }
                 // 构建增量更新配置对象
                 const { config: newConfig, providedFields } = buildApiConfig(args);
@@ -1338,7 +1355,7 @@ ${connectionInfo.workspace ? `• 团队: ${connectionInfo.workspace.team_name}
                 // 保持原有属性
                 updateTemplate.target_id = targetId;
                 updateTemplate.project_id = currentWorkspace.projectId;
-                updateTemplate.parent_id = originalApi.parent_id || '0';
+                updateTemplate.parent_id = args.parent_id || originalApi.parent_id || '0';
                 updateTemplate.version = (originalApi.version || 0) + 1;
                 // 执行修改
                 const updateResult = await apiClient.post('/open/apis/update', updateTemplate);
